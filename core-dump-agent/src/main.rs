@@ -203,6 +203,12 @@ fn copy_core_dump_composer_to_hostdir(host_location: &str) -> Result<(), std::io
             info!("Copying the composer from {} to {}", location, destination);
             fs::copy(location, destination)?;
         }
+        "script" => {
+            let location = format!("./vendor/script/{}", CDC_NAME);
+            let destination = format!("{}/{}", host_location, CDC_NAME);
+            info!("Copying the composer from {} to {}", location, destination);
+            fs::copy(location, destination)?;
+        }
         _ => {
             error!("Unknown vendor: {}", version);
             process::exit(1);

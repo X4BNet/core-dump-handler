@@ -38,5 +38,9 @@ RUN mv core-dump-composer cdc
 WORKDIR "/app/vendor/rhel7"
 COPY --from=rhel7builder /app-build/target/release/core-dump-composer ./
 RUN mv core-dump-composer cdc
+WORKDIR "/app/vendor/script"
+COPY ./script/cdc ./
+RUN chmod +x /app/vendor/script/cdc
+
 WORKDIR "/app"
 CMD ["./core-dump-agent"]

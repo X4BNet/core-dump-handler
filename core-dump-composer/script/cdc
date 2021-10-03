@@ -1,0 +1,74 @@
+#!/bin/bash
+
+# Based on https://github.com/alexey-medvedchikov/core-dump-handler
+# A Version of this software that was distributed under MIT License
+
+PATH="/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin"
+
+umask 0177
+
+for i in "$@"
+do
+case $i in
+    -c=*|--limit-size=*)
+        LIMIT_SIZE="${i#*=}"; shift
+    ;;
+    -e=*|--exe-name=*)
+        EXE_NAME="${i#*=}"; shift
+    ;;
+    -p=*|--pid=*)
+        REAL_PID="${i#*=}"; shift
+    ;;
+    -s=*|--signal=*)
+        SIGNAL="${i#*=}"; shift
+    ;;
+    -t=*|--timestamp=*)
+        TS="${i#*=}"; shift
+    ;;
+    -d=*|--dir=*)
+        DIRECTORY="${i#*=}"; shift
+    ;;
+    -h=*|--hostname=*)
+        HOSTNAME="${i#*=}"; shift
+    ;;
+    -E=*|--pathname=*)
+        PATHNAME="${i#*=}"; shift
+    ;;
+esac
+done
+
+if [[ "_0" = "_${LIMIT_SIZE}" ]]; then
+    exit 0
+fi
+
+if tar --version >/dev/null 2>&1; then
+    COMPRESSOR="tar -czvf "
+    EXT=.tar.gz
+else
+    COMPRESSOR=cat
+    EXT=
+fi
+
+UUID=$(uuidgen)
+
+DUMP_NAME="${UUID}-dump-${TS}-${HOSTNAME}-${EXE_NAME}-${REAL_PID}-${SIGNAL}"
+
+echo "{ \"uuid\":\"${UUID}\", \"dump_file\":\"${DUMP_NAME}.core${EXT}\", \"ext\": \"${EXT}\", \"timestamp\": \"${TS}\", \"hostname\": \"${HOSTNAME}\", \"exe\": \"${EXE_NAME}\", \"real_pid\": \"${REAL_PID}\", \"signal\": \"${SIGNAL}\" }" > "${DIRECTORY}/${DUMP_NAME}-dump-info.json" 
+
+head --bytes "${LIMIT_SIZE}" | ${DIRECTORY}/${DUMP_NAME}.core
+
+crictl inspectp -o json `crictl pods | grep ${HOSTNAME} | awk '{ print($1)}'` > "${DIRECTORY}/${DUMP_NAME}-runtime-info.json"
+
+POD_ID=$(crictl pods | grep ${HOSTNAME} | awk '{ print($1)}')
+
+IMAGE_ID=$(crictl ps -p ${POD_ID} | grep ${POD_ID} | awk '{ print($2) }')
+
+crictl ps -o json -p ${POD_ID} > "${DIRECTORY}/${DUMP_NAME}-ps-info.json"
+
+crictl pods -o json --name ${HOSTNAME} > "${DIRECTORY}/${DUMP_NAME}-pod-info.json"
+
+crictl img | grep $IMAGE_ID | awk '{ printf( "{ \"repo\":\"%s\", \"tag\": \"%s\", \"id\": \"%s\", \"size\": \"%s\" }\n", $1, $2, $3, $4 )}' > "${DIRECTORY}/${DUMP_NAME}-image-info.json"
+
+chmod 444 "${DIRECTORY}/${DUMP_NAME}.core" "${DIRECTORY}/${DUMP_NAME}-runtime-info.json" "${DIRECTORY}/${DUMP_NAME}-image-info.json" "${DIRECTORY}/${DUMP_NAME}-dump-info.json" "${DIRECTORY}/${DUMP_NAME}-ps-info.json"
+
+${COMPRESSOR} "${DIRECTORY}/${DUMP_NAME}${EXT}" "${DIRECTORY}/${DUMP_NAME}.core" "${DIRECTORY}/${DUMP_NAME}-runtime-info.json" "${DIRECTORY}/${DUMP_NAME}-image-info.json" "${DIRECTORY}/${DUMP_NAME}-dump-info.json" "${DIRECTORY}/${DUMP_NAME}-ps-info.json" "${DIRECTORY}/${DUMP_NAME}-pod-info.json"
